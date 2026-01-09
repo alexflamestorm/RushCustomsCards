@@ -1,0 +1,1 @@
+these are "RushCustomCards." Little by little, I'll be adapting Rush Duel cards to an advanced format, along with iconic cards, cards featuring characters from SEVENS and GO RUSH NOTE: I'll be adding them gradually, and if you find any errors in the cards (if you have programming knowledge), it would be a great help to correct them.

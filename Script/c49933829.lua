@@ -1,104 +1,133 @@
 
 local s,id=GetID()
 function s.initial_effect(c)
-	-- Materiales: Femtron + 1 Cyberse LUZ/OSC Nivel 4 o menor
+	-- Invocación por Fusión (Estándar)
 	c:EnableReviveLimit()
-	aux.AddFusionProcMix(c,true,true,49933816,s.matfilter)
-	
-	-- Invocación por contacto (Barajando al Deck)
+	aux.AddFusionProcMix(c,true,true,49933816,s.matfilter) -- 49933816 = Femtron
+
+	-- Fusión de Contacto (Barajando desde Campo o GY)
 	local e1=Effect.CreateEffect(c)
 	e1:SetType(EFFECT_TYPE_FIELD)
 	e1:SetCode(EFFECT_SPSUMMON_PROC)
 	e1:SetProperty(EFFECT_FLAG_UNCOPYABLE)
 	e1:SetRange(LOCATION_EXTRA)
-	e1:SetCountLimit(1,id,EFFECT_COUNT_CODE_OATH)
-	e1:SetCondition(s.sprcon)
-	e1:SetTarget(s.sprtg)
-	e1:SetOperation(s.sprop)
+	e1:SetCondition(s.contactcon)
+	e1:SetTarget(s.contacttg)
+	e1:SetOperation(s.contactop)
+	e1:SetValue(SUMMON_TYPE_SPECIAL)
 	c:RegisterEffect(e1)
-	
-	-- Efecto de Robo: Draw 2
+
+	-- Límite de Invocación Especial
 	local e2=Effect.CreateEffect(c)
-	e2:SetDescription(aux.Stringid(id,0))
-	e2:SetCategory(CATEGORY_DRAW)
-	e2:SetType(EFFECT_TYPE_IGNITION)
-	e2:SetRange(LOCATION_MZONE)
-	e2:SetCountLimit(1,id+100)
-	e2:SetCondition(s.drcon)
-	e2:SetTarget(s.drtg)
-	e2:SetOperation(s.drop)
+	e2:SetType(EFFECT_TYPE_SINGLE)
+	e2:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_UNCOPYABLE)
+	e2:SetCode(EFFECT_SPSUMMON_CONDITION)
+	e2:SetValue(s.splimit)
 	c:RegisterEffect(e2)
+
+	-- Efecto de Robo (Pot of Greed para Trons)
+	local e3=Effect.CreateEffect(c)
+	e3:SetDescription(aux.Stringid(id,0))
+	e3:SetCategory(CATEGORY_DRAW)
+	e3:SetType(EFFECT_TYPE_IGNITION)
+	e3:SetRange(LOCATION_MZONE)
+	e3:SetCountLimit(1,id)
+	e3:SetCondition(s.drcon)
+	e3:SetTarget(s.drtg)
+	e3:SetOperation(s.drop)
+	c:RegisterEffect(e3)
 end
 
--- Filtro para material genérico
+-- Filtros de Materiales
 function s.matfilter(c,fc,sumtype,tp)
-	return c:IsRace(RACE_CYBERSE,fc,sumtype,tp) and (c:IsAttribute(ATTRIBUTE_LIGHT,fc,sumtype,tp) or c:IsAttribute(ATTRIBUTE_DARK,fc,sumtype,tp))
+	return c:IsAttribute(ATTRIBUTE_LIGHT+ATTRIBUTE_DARK) and c:IsRace(RACE_CYBERSE) 
 		and c:IsLevelBelow(4)
 end
 
--- Lógica de Invocación por Contacto
-function s.sprfilter(c)
-	return (c:IsFaceup() or c:IsLocation(LOCATION_GRAVE)) and c:IsAbleToDeckAsCost()
+function s.splimit(e,se,sp,st)
+	return not e:GetHandler():IsLocation(LOCATION_EXTRA) or (st&SUMMON_TYPE_SPECIAL)==SUMMON_TYPE_SPECIAL or (st&SUMMON_TYPE_FUSION)==SUMMON_TYPE_FUSION
 end
-function s.sprcon(e,c)
+
+-- Lógica de Fusión de Contacto
+function s.contactfilter(c,tp)
+	return (c:IsCode(49933816) or s.matfilter(c)) and c:IsAbleToDeck()
+end
+
+function s.contactcon(e,c)
 	if c==nil then return true end
 	local tp=c:GetControler()
-	local g1=Duel.GetMatchingGroup(s.sprfilter,tp,LOCATION_MZONE+LOCATION_GRAVE,0,nil)
-	return g1:IsExists(Card.IsCode,1,nil,49933816) -- Femtron
-		and g1:IsExists(s.matfilter,1,nil,nil,SUMMON_TYPE_SPECIAL,tp) -- El otro material
+	local g=Duel.GetMatchingGroup(s.contactfilter,tp,LOCATION_MZONE+LOCATION_GRAVE,0,nil)
+	return g:IsExists(Card.IsCode,1,nil,49933816) -- Femtron
+		and g:IsExists(s.matfilter,1,nil) -- El otro material
+		and Duel.GetLocationCountFromEx(tp,tp,nil,c)>0
+		and Duel.GetFlagEffect(tp,id)==0 -- Límite de una vez por turno
 end
-function s.sprtg(e,tp,eg,ep,ev,re,r,rp,chk,c)
-	local g1=Duel.GetMatchingGroup(s.sprfilter,tp,LOCATION_MZONE+LOCATION_GRAVE,0,nil)
-	local g_fem=g1:Filter(Card.IsCode,nil,49933816)
-	local g_other=g1:Filter(s.matfilter,nil,nil,SUMMON_TYPE_SPECIAL,tp)
-	
-	if g_fem:IsExists(aux.IsInGroup,1,nil,g_other) then
-		-- Si una carta cumple ambos requisitos (como Dark Femtron), manejar selección
-	end
 
-	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TODECK)
-	local m1=g_fem:Select(tp,1,1,nil)
-	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TODECK)
-	local m2=g_other:Select(tp,1,1,m1)
-	m1:Merge(m2)
-	if #m1==2 then
-		m1:KeepAlive()
-		e:SetLabelObject(m1)
+function s.contacttg(e,tp,eg,ep,ev,re,r,rp,chk,c)
+	local g=Duel.GetMatchingGroup(s.contactfilter,tp,LOCATION_MZONE+LOCATION_GRAVE,0,nil)
+	local g1=g:Filter(Card.IsCode,nil,49933816)
+	local g2=g:Filter(s.matfilter,nil)
+	
+	if g1:IsExists(g2.IsContains,1,nil) then
+		-- Si una carta cumple ambas condiciones, manejamos la selección
+		Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TODECK)
+		local sg1=g1:Select(tp,1,1,nil)
+		g2:RemoveCard(sg1:GetFirst())
+		Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TODECK)
+		local sg2=g2:Select(tp,1,1,nil)
+		sg1:Merge(sg2)
+		sg1:KeepAlive()
+		e:SetLabelObject(sg1)
+		return true
+	else
+		Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TODECK)
+		local sg1=g1:Select(tp,1,1,nil)
+		Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TODECK)
+		local sg2=g2:Select(tp,1,1,nil)
+		sg1:Merge(sg2)
+		sg1:KeepAlive()
+		e:SetLabelObject(sg1)
 		return true
 	end
-	return false
 end
-function s.sprop(e,tp,eg,ep,ev,re,r,rp,c)
+
+function s.contactop(e,tp,eg,ep,ev,re,r,rp,c)
 	local g=e:GetLabelObject()
-	if not g then return end
-	Duel.SendtoDeck(g,nil,SEQ_DECKSHUFFLE,REASON_COST)
+	Duel.SendtoDeck(g,nil,SEQ_DECORATE,REASON_COST)
+	Duel.RegisterFlagEffect(tp,id,RESET_PHASE+PHASE_END,0,1)
 	g:DeleteGroup()
 end
 
 -- Lógica de Robo
 function s.drcon(e,tp,eg,ep,ev,re,r,rp)
-	local g=Duel.GetMatchingGroup(Card.IsRace,tp,LOCATION_GRAVE,0,nil,RACE_CYBERSE)
+	local g=Duel.GetMatchingGroup(function(c) return c:IsAttribute(ATTRIBUTE_LIGHT+ATTRIBUTE_DARK) and c:IsRace(RACE_CYBERSE) end,tp,LOCATION_GRAVE,0,nil)
 	return g:GetClassCount(Card.GetCode)>=3
 end
+
 function s.drtg(e,tp,eg,ep,ev,re,r,rp,chk)
 	if chk==0 then return Duel.IsPlayerCanDraw(tp,2) end
+	Duel.SetTargetPlayer(tp)
+	Duel.SetTargetParam(2)
 	Duel.SetOperationInfo(0,CATEGORY_DRAW,nil,0,tp,2)
 end
+
 function s.drop(e,tp,eg,ep,ev,re,r,rp)
-	if Duel.Draw(tp,2,REASON_EFFECT)==2 then
-		-- Restricción: Solo Cyberse LUZ/OSC pueden hacerte robar
+	local p,d=Duel.GetChainInfo(0,CHAININFO_TARGET_PLAYER,CHAININFO_TARGET_PARAM)
+	if Duel.Draw(p,d,REASON_EFFECT)==2 then
+		-- Restricción de robo (Efecto persistente)
 		local e1=Effect.CreateEffect(e:GetHandler())
 		e1:SetType(EFFECT_TYPE_FIELD)
 		e1:SetProperty(EFFECT_FLAG_PLAYER_TARGET)
 		e1:SetCode(EFFECT_CANNOT_DRAW)
 		e1:SetTargetRange(1,0)
-		e1:SetCondition(s.drawlimit)
+		e1:SetTarget(s.drawlimit)
 		e1:SetReset(RESET_PHASE+PHASE_END)
 		Duel.RegisterEffect(e1,tp)
 	end
 end
+
 function s.drawlimit(e,re,tp)
 	if not re then return false end
 	local rc=re:GetHandler()
-	return not (rc:IsRace(RACE_CYBERSE) and (rc:IsAttribute(ATTRIBUTE_LIGHT) or rc:IsAttribute(ATTRIBUTE_DARK)))
+	return not (rc:IsAttribute(ATTRIBUTE_LIGHT+ATTRIBUTE_DARK) and rc:IsRace(RACE_CYBERSE))
 end
